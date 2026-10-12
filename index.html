@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ragtag 播放測試</title>
+<style>
+	body{ margin:0; padding:20px; background:#14121f; color:#f2eee6; font-family:sans-serif; line-height:1.6; }
+	h2{ color:#e3b158; font-size:1.1rem; margin:28px 0 8px; }
+	.frame{ position:relative; width:100%; max-width:720px; padding-bottom:min(56.25%, 405px); }
+	.frame iframe, .frame video{ position:absolute; inset:0; width:100%; height:100%; border:0; background:#000; }
+	.box{ max-width:720px; background:#1e1b2e; border:1px solid #362f4d; border-radius:8px; padding:12px 16px; margin-top:10px; font-size:.9rem; }
+	.ok{ color:#4ade80; } .bad{ color:#f87171; } .muted{ color:#948fa8; }
+	button{ margin:4px 6px 4px 0; padding:8px 14px; border-radius:6px; border:1px solid #e3b158; background:transparent; color:#e3b158; font-size:.9rem; }
+</style>
+</head>
+<body>
+	<p class="muted">請用電腦的 Chrome 或 Edge，以及手機各打開一次，把下面兩個「測試結果」框的內容截圖給我。</p>
+
+	<h2>測試一：Ragtag 官方嵌入播放器</h2>
+	<div class="frame">
+		<iframe src="https://archive.ragtag.moe/embed/u3NA6uA1Vhk" allow="fullscreen"></iframe>
+	</div>
+	<div class="box">請按播放，看能不能正常播放（這個方式只能從頭開始播）。</div>
+
+	<h2>測試二：直接播放影片檔（從 10:00 開始）</h2>
+	<div class="frame">
+		<video id="v" controls playsinline preload="metadata"
+			src="https://content.archive.ragtag.moe/s3:archive-staging/archive-202506/u3NA6uA1Vhk/u3NA6uA1Vhk.mkv#t=600"></video>
+	</div>
+	<div>
+		<button onclick="v.play()">▶ 播放</button>
+		<button onclick="v.pause()">❚❚ 暫停</button>
+		<button onclick="v.currentTime = 1800; v.play()">跳到 30:00</button>
+	</div>
+	<div class="box" id="result">測試結果：載入中……</div>
+
+<script>
+	const v = document.getElementById('v');
+	const result = document.getElementById('result');
+	const log = [];
+	const support = [
+		['mkv（Matroska）', v.canPlayType('video/x-matroska')],
+		['webm', v.canPlayType('video/webm')],
+		['mp4', v.canPlayType('video/mp4')],
+	].map(([name, r]) => `${name}：${r || '不支援'}`).join('　');
+	let state = '尚未播放';
+	function render(){
+		const t = Math.floor(v.currentTime);
+		result.innerHTML = `
+			<div><b>測試結果</b>（瀏覽器：${navigator.userAgent.match(/(Edg|Chrome|Firefox|Version)\/[\d.]+/)?.[0] || navigator.userAgent}）</div>
+			<div>瀏覽器格式支援：${support}</div>
+			<div>影片資訊載入：${v.readyState >= 1 ? '<span class="ok">成功</span>，總長度 ' + Math.floor(v.duration / 60) + ' 分鐘' : '尚未載入'}</div>
+			<div>目前時間：${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}　狀態：${state}</div>
+			<div>${log.map(l => `<div class="${l.cls}">${l.text}</div>`).join('')}</div>`;
+	}
+	v.addEventListener('loadedmetadata', () => { log.push({ cls:'ok', text:'✔ 影片資訊載入成功' }); render(); });
+	v.addEventListener('playing', () => { state = '<span class="ok">正在播放</span>'; render(); });
+	v.addEventListener('pause', () => { state = '暫停'; render(); });
+	v.addEventListener('seeked', () => { log.push({ cls:'ok', text:`✔ 跳轉成功：${Math.floor(v.currentTime / 60)} 分` }); render(); });
+	v.addEventListener('error', () => {
+		const codes = { 1:'使用者中止', 2:'網路錯誤', 3:'解碼失敗（格式不支援）', 4:'不支援這個影片來源或格式' };
+		log.push({ cls:'bad', text:`✖ 錯誤：${codes[v.error?.code] || '未知'}` });
+		render();
+	});
+	v.addEventListener('timeupdate', render);
+	render();
+</script>
+</body>
+</html>
