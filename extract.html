@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Discord Embed 萃取工具 (顯示筆數統計)</title>
+    <title>Discord Embed 萃取工具 (YouTube 日期簡化)</title>
     <style>
         body { font-family: sans-serif; max-width: 950px; margin: 30px auto; padding: 0 20px; background-color: #f9f9f9; }
         textarea { width: 100%; height: 200px; padding: 10px; font-family: monospace; box-sizing: border-box; }
@@ -19,12 +19,12 @@
 </head>
 <body>
 
-    <h2>Discord Messages Embeds 萃取器 (含筆數統計)</h2>
+    <h2>Discord Messages Embeds 萃取器 (YouTube 日期簡化)</h2>
     <p>請將包含 messages 的 JSON 文字貼在下方：</p>
     
     <textarea id="jsonInput" placeholder='貼上你的 JSON 格式文字...'></textarea>
     <br>
-    <button onclick="extractEmbeds()">開始分類與統計</button>
+    <button onclick="extractEmbeds()">開始分類與組合</button>
     
     <div id="errorMsg" class="error"></div>
     <div id="warnMsg" class="warning"></div>
@@ -51,6 +51,7 @@
     <pre id="otherOutput">尚未產生結果...</pre>
 
     <script>
+        // 完整時間格式：YYYY/M/D 上午/下午 hh:mm (適用 Twitter 與其他)
         function formatDateTime(timestampStr) {
             if (!timestampStr) return '';
             try {
@@ -70,6 +71,31 @@
                 const strHours = String(hours).padStart(2, '0');
 
                 return `${year}/${month}/${day} ${period} ${strHours}:${minutes}`;
+            } catch (e) {
+                return timestampStr;
+            }
+        }
+
+        // 簡短日期格式：YYYY/M/D (專為 YouTube 設計)
+        function formatDateOnly(timestampStr) {
+            if (!timestampStr) return '';
+            try {
+                const dateObj = new Date(timestampStr);
+                if (isNaN(dateObj.getTime())) {
+                    // 若無法解析，嘗試抓取 T 之前的字串再切割
+                    const datePart = String(timestampStr).split('T')[0];
+                    const parts = datePart.split('-');
+                    if (parts.length === 3) {
+                        return `${parseInt(parts[0], 10)}/${parseInt(parts[1], 10)}/${parseInt(parts[2], 10)}`;
+                    }
+                    return timestampStr;
+                }
+
+                const year = dateObj.getFullYear();
+                const month = dateObj.getMonth() + 1;
+                const day = dateObj.getDate();
+
+                return `${year}/${month}/${day}`;
             } catch (e) {
                 return timestampStr;
             }
@@ -115,7 +141,6 @@
             errorDiv.textContent = '';
             warnDiv.textContent = '';
 
-            // 重置區塊與標題筆數
             document.getElementById('twitterOutput').textContent = '尚無資料...';
             document.getElementById('youtubeOutput').textContent = '尚無資料...';
             document.getElementById('otherOutput').textContent = '尚無資料...';
@@ -155,26 +180,33 @@
                     item.embeds.forEach(embed => {
                         if (!embed || typeof embed !== 'object') return;
                         
-                        const timestamp = formatDateTime(embed.timestamp || parentMsg.timestamp);
+                        const rawTimestamp = embed.timestamp || parentMsg.timestamp;
                         const authorName = cleanText(embed.author ? embed.author.name : '');
                         const url = cleanText(embed.url || '');
                         const description = escapeDescription(embed.description || '');
                         const title = cleanText(embed.title || '');
 
-                        const line = `${timestamp}\t${authorName}\t${url}\t${description}\t${title}`;
-
                         const lowerUrl = url.toLowerCase();
+                        
                         if (lowerUrl.includes('twitter.com') || lowerUrl.includes('x.com')) {
+                            // Twitter: timestamp (完整格式) \t author_name \t url \t description
+                            const timestamp = formatDateTime(rawTimestamp);
+                            const line = `${timestamp}\t${authorName}\t${url}\t${description}`;
                             twitterLines.push(line);
                         } else if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
+                            // YouTube: timestamp (僅 YYYY/M/D) \t title \t url
+                            const timestamp = formatDateOnly(rawTimestamp);
+                            const line = `${timestamp}\t${title}\t${url}`;
                             youtubeLines.push(line);
                         } else {
+                            // 其他: timestamp (完整格式) \t author_name \t url \t description \t title
+                            const timestamp = formatDateTime(rawTimestamp);
+                            const line = `${timestamp}\t${authorName}\t${url}\t${description}\t${title}`;
                             otherLines.push(line);
                         }
                     });
                 });
 
-                // 更新畫面顯示與筆數標題
                 if (twitterLines.length > 0) {
                     document.getElementById('twitterOutput').textContent = twitterLines.join('\n');
                 }
