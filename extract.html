@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>Discord Embed 萃取工具 (顯示筆數統計)</title>
+    <style>
+        body { font-family: sans-serif; max-width: 950px; margin: 30px auto; padding: 0 20px; background-color: #f9f9f9; }
+        textarea { width: 100%; height: 200px; padding: 10px; font-family: monospace; box-sizing: border-box; }
+        button { padding: 10px 20px; background-color: #5865F2; color: white; border: none; cursor: pointer; font-size: 16px; margin: 10px 5px 10px 0; border-radius: 4px; }
+        button:hover { background-color: #4752C4; }
+        .copy-btn { background-color: #2D7D46; }
+        .copy-btn:hover { background-color: #246337; }
+        pre { background: #fff; padding: 15px; border: 1px solid #ddd; overflow-x: auto; max-height: 300px; border-radius: 4px; font-family: monospace; white-space: pre-wrap; margin-bottom: 20px; }
+        .error { color: red; font-weight: bold; }
+        .warning { color: orange; font-weight: bold; }
+        .success { color: green; font-weight: bold; margin-left: 10px; }
+        h3 { margin-top: 30px; }
+    </style>
+</head>
+<body>
+
+    <h2>Discord Messages Embeds 萃取器 (含筆數統計)</h2>
+    <p>請將包含 messages 的 JSON 文字貼在下方：</p>
+    
+    <textarea id="jsonInput" placeholder='貼上你的 JSON 格式文字...'></textarea>
+    <br>
+    <button onclick="extractEmbeds()">開始分類與統計</button>
+    
+    <div id="errorMsg" class="error"></div>
+    <div id="warnMsg" class="warning"></div>
+
+    <h3 id="twitterTitle">🐦 Twitter / X 來源結果 (共 0 筆)：</h3>
+    <div>
+        <button class="copy-btn" onclick="copySection('twitterOutput')">複製 Twitter 結果</button>
+        <span id="copyMsgTwitter" class="success"></span>
+    </div>
+    <pre id="twitterOutput">尚未產生結果...</pre>
+
+    <h3 id="youtubeTitle">▶️ YouTube 來源結果 (共 0 筆)：</h3>
+    <div>
+        <button class="copy-btn" onclick="copySection('youtubeOutput')">複製 YouTube 結果</button>
+        <span id="copyMsgYoutube" class="success"></span>
+    </div>
+    <pre id="youtubeOutput">尚未產生結果...</pre>
+
+    <h3 id="otherTitle">📁 其他來源結果 (共 0 筆)：</h3>
+    <div>
+        <button class="copy-btn" onclick="copySection('otherOutput')">複製其他結果</button>
+        <span id="copyMsgOther" class="success"></span>
+    </div>
+    <pre id="otherOutput">尚未產生結果...</pre>
+
+    <script>
+        function formatDateTime(timestampStr) {
+            if (!timestampStr) return '';
+            try {
+                const dateObj = new Date(timestampStr);
+                if (isNaN(dateObj.getTime())) return timestampStr;
+
+                const year = dateObj.getFullYear();
+                const month = dateObj.getMonth() + 1;
+                const day = dateObj.getDate();
+
+                let hours = dateObj.getHours();
+                const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+                
+                const period = hours >= 12 ? '下午' : '上午';
+                hours = hours % 12;
+                hours = hours ? hours : 12;
+                const strHours = String(hours).padStart(2, '0');
+
+                return `${year}/${month}/${day} ${period} ${strHours}:${minutes}`;
+            } catch (e) {
+                return timestampStr;
+            }
+        }
+
+        function cleanText(text) {
+            if (!text) return '';
+            return String(text).replace(/[\r\n]+/g, ' ').trim();
+        }
+
+        function escapeDescription(text) {
+            if (!text) return '';
+            return String(text)
+                .replace(/\r\n/g, '\\n')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\n')
+                .trim();
+        }
+
+        function findAllEmbeds(obj, results = []) {
+            if (!obj || typeof obj !== 'object') return results;
+            
+            if (Array.isArray(obj)) {
+                obj.forEach(item => findAllEmbeds(item, results));
+            } else {
+                if (obj.embeds && Array.isArray(obj.embeds)) {
+                    results.push({ parent: obj, embeds: obj.embeds });
+                }
+                for (let key in obj) {
+                    if (obj.hasOwnProperty(key)) {
+                        findAllEmbeds(obj[key], results);
+                    }
+                }
+            }
+            return results;
+        }
+
+        function extractEmbeds() {
+            const inputVal = document.getElementById('jsonInput').value.trim();
+            const errorDiv = document.getElementById('errorMsg');
+            const warnDiv = document.getElementById('warnMsg');
+            
+            errorDiv.textContent = '';
+            warnDiv.textContent = '';
+
+            // 重置區塊與標題筆數
+            document.getElementById('twitterOutput').textContent = '尚無資料...';
+            document.getElementById('youtubeOutput').textContent = '尚無資料...';
+            document.getElementById('otherOutput').textContent = '尚無資料...';
+
+            document.getElementById('twitterTitle').textContent = '🐦 Twitter / X 來源結果 (共 0 筆)：';
+            document.getElementById('youtubeTitle').textContent = '▶️ YouTube 來源結果 (共 0 筆)：';
+            document.getElementById('otherTitle').textContent = '📁 其他來源結果 (共 0 筆)：';
+
+            if (!inputVal) {
+                errorDiv.textContent = '請先貼上 JSON 文字！';
+                return;
+            }
+
+            let messages = null;
+
+            try {
+                messages = JSON.parse(inputVal);
+            } catch (e1) {
+                try {
+                    const wrapped = '[' + inputVal.replace(/\}\s*\{/g, '},{') + ']';
+                    messages = JSON.parse(wrapped);
+                    warnDiv.textContent = '提示：偵測到非標準陣列格式，已自動修復並成功解析！';
+                } catch (e2) {
+                    errorDiv.textContent = 'JSON 解析失敗：' + e1.message;
+                    return;
+                }
+            }
+
+            try {
+                const foundItems = findAllEmbeds(messages);
+                const twitterLines = [];
+                const youtubeLines = [];
+                const otherLines = [];
+
+                foundItems.forEach(item => {
+                    const parentMsg = item.parent;
+                    item.embeds.forEach(embed => {
+                        if (!embed || typeof embed !== 'object') return;
+                        
+                        const timestamp = formatDateTime(embed.timestamp || parentMsg.timestamp);
+                        const authorName = cleanText(embed.author ? embed.author.name : '');
+                        const url = cleanText(embed.url || '');
+                        const description = escapeDescription(embed.description || '');
+                        const title = cleanText(embed.title || '');
+
+                        const line = `${timestamp}\t${authorName}\t${url}\t${description}\t${title}`;
+
+                        const lowerUrl = url.toLowerCase();
+                        if (lowerUrl.includes('twitter.com') || lowerUrl.includes('x.com')) {
+                            twitterLines.push(line);
+                        } else if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
+                            youtubeLines.push(line);
+                        } else {
+                            otherLines.push(line);
+                        }
+                    });
+                });
+
+                // 更新畫面顯示與筆數標題
+                if (twitterLines.length > 0) {
+                    document.getElementById('twitterOutput').textContent = twitterLines.join('\n');
+                }
+                document.getElementById('twitterTitle').textContent = `🐦 Twitter / X 來源結果 (共 ${twitterLines.length} 筆)：`;
+
+                if (youtubeLines.length > 0) {
+                    document.getElementById('youtubeOutput').textContent = youtubeLines.join('\n');
+                }
+                document.getElementById('youtubeTitle').textContent = `▶️ YouTube 來源結果 (共 ${youtubeLines.length} 筆)：`;
+
+                if (otherLines.length > 0) {
+                    document.getElementById('otherOutput').textContent = otherLines.join('\n');
+                }
+                document.getElementById('otherTitle').textContent = `📁 其他來源結果 (共 ${otherLines.length} 筆)：`;
+
+                if (twitterLines.length === 0 && youtubeLines.length === 0 && otherLines.length === 0) {
+                    warnDiv.textContent = '解析成功，但找不到任何包含 embeds 的資料結構。';
+                }
+
+            } catch (err) {
+                errorDiv.textContent = '資料萃取過程發生錯誤：' + err.message;
+            }
+        }
+
+        function copySection(elementId) {
+            const outputText = document.getElementById(elementId).textContent;
+            if (!outputText || outputText === '尚無資料...' || outputText === '尚未產生結果...') {
+                alert('目前這個區塊沒有可複製的結果！');
+                return;
+            }
+            
+            let msgId = 'copyMsgTwitter';
+            if (elementId === 'youtubeOutput') msgId = 'copyMsgYoutube';
+            if (elementId === 'otherOutput') msgId = 'copyMsgOther';
+
+            navigator.clipboard.writeText(outputText).then(() => {
+                document.getElementById(msgId).textContent = '已成功複製！';
+                setTimeout(() => {
+                    document.getElementById(msgId).textContent = '';
+                }, 3000);
+            }).catch(err => {
+                alert('複製失敗：' + err);
+            });
+        }
+    </script>
+
+</body>
+</html>
